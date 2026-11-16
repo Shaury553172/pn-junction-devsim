@@ -1,31 +1,31 @@
 # DEVSIM 1-D Si pn junction: dark/illuminated I-V and band diagram  (cgs units, T = 300 K)
 import os, sys, contextlib
-for _v in ("MKL_NUM_THREADS", "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS"):   # 1-D matrices are tiny: threads only add overhead
+for _v in ("MKL_NUM_THREADS", "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS"):   
     os.environ.setdefault(_v, "1")
 import numpy as np, devsim as ds
 from devsim.python_packages.simple_physics import *
 from devsim.python_packages.model_create import *
-try: ds.set_parameter(name="threads_available", value=1)     # ignored by DEVSIM versions without this parameter
+try: ds.set_parameter(name="threads_available", value=1)  
 except Exception: pass
 dev, reg = "pn", "Si"
-PS_FAR = 2e-4        # mesh spacing far from the junction [cm] (2 um). Original (slower) value: 2e-5
+PS_FAR = 2e-4       
 CELL = (1e19, 2e16, 0.3e-4, 200e-4)   # proposed solar cell: Nd, Na, Wn, Wp
-ABS_ERR, REL_ERR = 1e6, 1e-8         # sweep tolerances. The old ABS_ERR = 1e10 treats currents below ~1e-9 A as "converged"
-                                     # without solving them (bad for the low-voltage and reverse-bias points)
+ABS_ERR, REL_ERR = 1e6, 1e-8         
+
 ABS_FALLBACK = (1e8, 3e8, 1e9, 3e9, 1e10)   # extra steps between 1e8 and 1e10 so the garbage 1e10 is almost never reached
 BANDS=[(0.35,46,1.1e6),(0.45,150,2.5e4),(0.55,160,7.0e3),(0.65,150,2.8e3),
-       (0.75,115,1.3e3),(0.85,95,5.3e2),(0.95,70,1.6e2),(1.05,55,4.0)]   # um, W/m2, 1/cm
+       (0.75,115,1.3e3),(0.85,95,5.3e2),(0.95,70,1.6e2),(1.05,55,4.0)]   
 
-def photogen(sun, R=0.05):                       # Beer-Lambert generation, light enters at x=0 (n side)
+def photogen(sun, R=0.05):                       
     t=[f"{(1-R)*P*sun*1e-4*lam*1e-6/1.9864e-25*a:.6e}*exp(-{a}*x)" for lam,P,a in BANDS]
     return "+".join(t) if sun>0 else "0"
 
 def build(Nd, Na, Wn, Wp, sun=0.0, tau0=1e-5, Nref=1e16):
-    for f, k in ((ds.delete_device, "device"), (ds.delete_mesh, "mesh")):   # allow repeated builds
+    for f, k in ((ds.delete_device, "device"), (ds.delete_mesh, "mesh")):   
         try: f(**{k: dev if k == "device" else "m"})
         except Exception: pass
     ds.create_1d_mesh(mesh="m")                                   # --- mesh (graded, cm)
-    # mesh spacing: 2 nm at the junction (and at the front if illuminated), growing to PS_FAR far away
+    
     ps_top = 2e-7 if sun > 0 else min(PS_FAR, Wn/20)
     ps_bot = min(PS_FAR, Wp/20)
     ds.add_1d_mesh_line(mesh="m", pos=0,     ps=ps_top, tag="top")
@@ -36,7 +36,7 @@ def build(Nd, Na, Wn, Wp, sun=0.0, tau0=1e-5, Nref=1e16):
     ds.add_1d_region(mesh="m", material="Si", region=reg, tag1="top", tag2="bot")
     ds.finalize_mesh(mesh="m"); ds.create_device(mesh="m", device=dev)
     SetSiliconParameters(dev, reg, 300)
-    ds.set_parameter(device=dev, region=reg, name="Cn", value=2.8e-31)   # Auger
+    ds.set_parameter(device=dev, region=reg, name="Cn", value=2.8e-31)   
     ds.set_parameter(device=dev, region=reg, name="Cp", value=9.9e-32)
     CreateSolution(dev, reg, "Potential")                          # --- doping
     CreateNodeModel(dev, reg, "Acceptors", f"{Na}*step(x-{Wn})")
@@ -59,7 +59,7 @@ def build(Nd, Na, Wn, Wp, sun=0.0, tau0=1e-5, Nref=1e16):
     ds.set_node_values(device=dev, region=reg, name="Electrons", init_from="IntrinsicElectrons")
     ds.set_node_values(device=dev, region=reg, name="Holes",     init_from="IntrinsicHoles")
     CreateSiliconDriftDiffusion(dev, reg, mu_n="mu_n", mu_p="mu_p")  # --- drift-diffusion
-    # SRH (tau_n=tau_p) + Auger - optical generation, replacing the default USRH / generation terms
+    
     U=("(Electrons*Holes-n_i^2)/(tau_n*(Electrons+n_i)+tau_n*(Holes+n_i))"
        "+(Cn*Electrons+Cp*Holes)*(Electrons*Holes-n_i^2)")
     CreateNodeModel(dev, reg, "PhotoGen", photogen(sun))
@@ -104,7 +104,7 @@ def sweep(volts, h0=0.02, min_step=1e-3, dark=False, hmax=0.1):
     bias = GetContactBiasName("bot"); cur = ds.get_parameter(device=dev, name=bias)
     Vout, J = [], []
     for target in volts:
-        h = float(np.clip(target - cur, -hmax, hmax)) or h0   # try to reach the next target in ONE step (halves automatically on failure)
+        h = float(np.clip(target - cur, -hmax, hmax)) or h0  
         while abs(target - cur) > 1e-12:
             h = np.sign(target - cur)*min(abs(h), abs(target - cur))
             sv = _save()
@@ -166,7 +166,7 @@ def job(spec):
     tag, fname, kw = spec
     try:
         return tag, globals()[fname](**kw)
-    except BaseException as e:                 # DEVSIM's exception class cannot be pickled -> send the message as text
+    except BaseException as e:                
         import traceback
         return tag, f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
 
